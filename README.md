@@ -10,6 +10,7 @@
 - **物品交付/退还路由**：物品交付与退还路由到 `EntityScheduler`。
 - **拍卖过期处理路由**：拍卖过期处理路由到 `EntityScheduler`。
 - **升级 cloud 命令框架**：`2.0.0-beta.10` → `2.0.0-beta.16`（修复 `ItemStackParser` 在 MC 26.2 的 NMS 兼容问题）。
+- **升级 paper-api 到 26.2**：`1.21.8-R0.1-SNAPSHOT` → `26.2.build.43-alpha`，`api-version` 改为 `26.2`。
 - **plugin.yml**：`folia-supported: true`。
 
 ### 兼容性
@@ -20,13 +21,15 @@
 | Canvas | ✅ 兼容 | FoliaCompat 检测到 Folia 后路由到对应 Scheduler |
 | Paper/Purpur | ✅ 兼容 | FoliaCompat 检测非 Folia 后走原 `BukkitScheduler` |
 
+> 注：本 fork 基于 paper-api 26.2 构建，需要服务端为 MC 26.2+（Paper/Canvas/Folia 26.2 系列）。
+
 ### 构建方式
 
 ```bash
 mvn package -DskipTests
 ```
 
-**Java 版本要求**：Java 21
+**Java 版本要求**：Java 25
 
 ---
 
