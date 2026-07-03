@@ -26,12 +26,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: PlayerAuctions
-          path: target/player-auctions-*.jar
+          path: target/PlayerAuctions-*.jar
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.sha }}
           name: PlayerAuctions Build
-          files: target/player-auctions-*.jar
+          files: target/PlayerAuctions-*.jar
           prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
