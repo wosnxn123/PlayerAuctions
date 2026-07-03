@@ -1,3 +1,35 @@
+## Fork 修改说明
+
+本 fork 为 PlayerAuctions 添加了 Folia/Canvas 兼容支持。
+
+### 修改内容
+
+- **FoliaCompat 工具类**：运行时检测 Folia，并将调度路由到对应的 Scheduler。
+- **GUI 操作路由**：GUI 的打开/关闭/刷新背包操作路由到 `EntityScheduler`。
+- **经济操作路由**：查余额/扣款/存款等经济操作路由到 `AsyncScheduler`。
+- **物品交付/退还路由**：物品交付与退还路由到 `EntityScheduler`。
+- **拍卖过期处理路由**：拍卖过期处理路由到 `EntityScheduler`。
+- **升级 cloud 命令框架**：`2.0.0-beta.10` → `2.0.0-beta.16`（修复 `ItemStackParser` 在 MC 26.2 的 NMS 兼容问题）。
+- **plugin.yml**：`folia-supported: true`。
+
+### 兼容性
+
+| 服务端 | 兼容性 | 说明 |
+|--------|--------|------|
+| Folia | ✅ 兼容 | FoliaCompat 检测到 Folia 后路由到对应 Scheduler |
+| Canvas | ✅ 兼容 | FoliaCompat 检测到 Folia 后路由到对应 Scheduler |
+| Paper/Purpur | ✅ 兼容 | FoliaCompat 检测非 Folia 后走原 `BukkitScheduler` |
+
+### 构建方式
+
+```bash
+mvn package -DskipTests
+```
+
+**Java 版本要求**：Java 21
+
+---
+
 <div align="center">
   <h1>💰 PlayerAuctions v3.1.0</h1>
   <p><i>A modern, deeply integrated, and feature-rich Auction House plugin built exclusively for PaperMC 1.21.</i></p>
