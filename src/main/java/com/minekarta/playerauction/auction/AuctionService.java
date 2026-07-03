@@ -8,6 +8,7 @@ import com.minekarta.playerauction.economy.EconomyRouter;
 import com.minekarta.playerauction.economy.EconomyService;
 import com.minekarta.playerauction.notification.NotificationManager;
 import com.minekarta.playerauction.storage.AuctionStorage;
+import com.folia.compat.FoliaCompat;
 import java.util.Map;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -123,11 +124,13 @@ public class AuctionService {
                                         // Deposit to seller
                                         return economy.deposit(auction.seller(), sellerAmount, "Sold item")
                                                 .thenCompose(v -> {
-                                                    // Give item to buyer on MAIN THREAD (inventory operations must be
-                                                    // sync)
+                                                    // Give item to buyer on the buyer's entity thread (inventory
+                                                    // operations must be sync). Folia uses EntityScheduler;
+                                                    // Paper uses main thread. If buyer retires (offline), mark
+                                                    // delivery failed.
                                                     CompletableFuture<Boolean> itemDelivery = new CompletableFuture<>();
 
-                                                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                                                    FoliaCompat.runEntity(plugin, buyer, () -> {
                                                         try {
                                                             ItemStack itemToGive = auction.item().toItemStack();
                                                             if (itemToGive == null) {
@@ -155,7 +158,7 @@ public class AuctionService {
                                                             ex.printStackTrace();
                                                             itemDelivery.complete(false);
                                                         }
-                                                    });
+                                                    }, () -> itemDelivery.complete(false));
 
                                                     return itemDelivery.thenApply(delivered -> {
                                                         if (delivered) {
@@ -257,15 +260,30 @@ public class AuctionService {
                 return CompletableFuture.completedFuture(false);
             }
 
-            // Return item directly to seller
+            // Return item directly to seller.
+            // 退还物品涉及玩家背包/掉落(实体操作), 必须在 player 实体所在区域线程执行.
+            // 用 runEntity 路由并阻塞等待完成, 再更新拍卖状态.
             ItemStack itemToReturn = auction.item().toItemStack();
-            if (player.getInventory().firstEmpty() == -1) {
-                // Inventory full, drop item at player location
-                player.getWorld().dropItem(player.getLocation(), itemToReturn);
-                player.sendMessage(
-                        configManager.getPrefixedMessage("inventory-full", "Inventory full, item dropped on ground"));
-            } else {
-                player.getInventory().addItem(itemToReturn);
+            java.util.concurrent.CountDownLatch returnLatch = new java.util.concurrent.CountDownLatch(1);
+            FoliaCompat.runEntity(plugin, player, () -> {
+                try {
+                    if (player.getInventory().firstEmpty() == -1) {
+                        // Inventory full, drop item at player location
+                        player.getWorld().dropItem(player.getLocation(), itemToReturn);
+                        player.sendMessage(configManager.getPrefixedMessage("inventory-full",
+                                "Inventory full, item dropped on ground"));
+                    } else {
+                        player.getInventory().addItem(itemToReturn);
+                    }
+                } catch (Throwable ignored) {
+                } finally {
+                    returnLatch.countDown();
+                }
+            }, returnLatch::countDown);
+            try {
+                returnLatch.await();
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
             }
 
             Auction updatedAuction = auction.withStatus(AuctionStatus.CANCELLED).withIncrementedVersion();
@@ -298,13 +316,29 @@ public class AuctionService {
                     Player seller = Bukkit.getPlayer(current.seller());
                     if (seller != null && seller.isOnline()) {
                         ItemStack itemToReturn = current.item().toItemStack();
-                        if (seller.getInventory().firstEmpty() == -1) {
-                            // Inventory full, drop item at seller location
-                            seller.getWorld().dropItem(seller.getLocation(), itemToReturn);
-                            seller.sendMessage(configManager.getPrefixedMessage("inventory-full",
-                                    "Inventory full, expired item dropped on ground"));
-                        } else {
-                            seller.getInventory().addItem(itemToReturn);
+                        // 退还物品涉及 seller 背包/掉落(实体操作), 必须在 seller 区域线程.
+                        // 用 runEntity 路由, 阻塞等待完成后再更新拍卖状态.
+                        java.util.concurrent.CountDownLatch returnLatch = new java.util.concurrent.CountDownLatch(1);
+                        Player sellerFinal = seller;
+                        FoliaCompat.runEntity(plugin, seller, () -> {
+                            try {
+                                if (sellerFinal.getInventory().firstEmpty() == -1) {
+                                    // Inventory full, drop item at seller location
+                                    sellerFinal.getWorld().dropItem(sellerFinal.getLocation(), itemToReturn);
+                                    sellerFinal.sendMessage(configManager.getPrefixedMessage("inventory-full",
+                                            "Inventory full, expired item dropped on ground"));
+                                } else {
+                                    sellerFinal.getInventory().addItem(itemToReturn);
+                                }
+                            } catch (Throwable ignored) {
+                            } finally {
+                                returnLatch.countDown();
+                            }
+                        }, returnLatch::countDown);
+                        try {
+                            returnLatch.await();
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
                         }
                         notificationManager.sendNotification(seller, "auction.expired", Map.of(
                                 "%item%", current.item().toItemStack().getType().toString()));

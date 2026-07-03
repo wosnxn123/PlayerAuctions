@@ -4,6 +4,7 @@ import com.minekarta.playerauction.PlayerAuction;
 import com.minekarta.playerauction.mailbox.model.MailboxItem;
 import com.minekarta.playerauction.mailbox.model.MailboxItemType;
 import com.minekarta.playerauction.util.TimeUtil;
+import com.folia.compat.FoliaCompat;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -70,8 +71,8 @@ public class MailboxGui extends PaginatedGui {
                     this.hasNextPage = fetchedItems.size() > itemsPerPage;
                     this.mailboxItems = hasNextPage ? fetchedItems.subList(0, itemsPerPage) : fetchedItems;
 
-                    // Build GUI on main thread
-                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    // Build GUI on the player's entity thread
+                    FoliaCompat.runEntity(plugin, player, () -> {
                         // Add mailbox items
                         for (int i = 0; i < mailboxItems.size(); i++) {
                             MailboxItem item = mailboxItems.get(i);
@@ -103,11 +104,11 @@ public class MailboxGui extends PaginatedGui {
 
                         // Open inventory
                         openInventory();
-                    });
+                    }, this::openInventory);
                 }).exceptionally(ex -> {
                     kah.getLogger().severe("Error building MailboxGui: " + ex.getMessage());
                     ex.printStackTrace();
-                    plugin.getServer().getScheduler().runTask(plugin, this::openInventory);
+                    FoliaCompat.runEntity(plugin, player, this::openInventory, () -> {});
                     return null;
                 });
     }
@@ -220,9 +221,8 @@ public class MailboxGui extends PaginatedGui {
             kah.getMailboxService().claimAll(player).thenAccept(count -> {
                 if (count > 0) {
                     // Reopen mailbox after short delay
-                    plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                        new MailboxGui(kah, player, 1).open();
-                    }, 20L);
+                    FoliaCompat.runEntityLater(plugin, player, () -> new MailboxGui(kah, player, 1).open(),
+                            () -> {}, 20L);
                 }
             });
             return;
@@ -239,9 +239,8 @@ public class MailboxGui extends PaginatedGui {
             kah.getMailboxService().claimItem(player, clickedItem.id()).thenAccept(success -> {
                 if (success) {
                     // Refresh mailbox GUI after short delay
-                    plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                        new MailboxGui(kah, player, page).open();
-                    }, 10L);
+                    FoliaCompat.runEntityLater(plugin, player, () -> new MailboxGui(kah, player, page).open(),
+                            () -> {}, 10L);
                 }
             });
         }

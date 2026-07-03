@@ -17,6 +17,7 @@ import com.minekarta.playerauction.notification.NotificationManager;
 import com.minekarta.playerauction.transaction.TransactionLogger;
 import com.minekarta.playerauction.storage.TransactionStorage;
 import com.minekarta.playerauction.players.PlayerSettingsService;
+import com.folia.compat.FoliaCompat;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.command.CommandSender;
 import org.incendo.cloud.paper.LegacyPaperCommandManager;
@@ -111,11 +112,11 @@ public class PlayerAuction extends JavaPlugin {
         new AuctionExpirer(auctionService).runTaskTimerAsynchronously(this, 20 * 30, 20 * 30); // Every 30 seconds
 
         // 8. Start Mailbox Cleanup Task (runs every hour)
-        getServer().getScheduler().runTaskTimerAsynchronously(this, () -> {
-            mailboxService.cleanupExpiredItems();
-        }, 20 * 60 * 60, 20 * 60 * 60); // Every hour
+        // Folia 兼容: 用 AsyncScheduler 而非 BukkitScheduler.runTaskTimerAsynchronously
+        FoliaCompat.runAsyncTimer(this, () -> mailboxService.cleanupExpiredItems(),
+                20 * 60 * 60, 20 * 60 * 60); // Every hour
 
-        getLogger().info("PlayerAuctions has been enabled!");
+        getLogger().info("PlayerAuctions has been enabled! (Folia/Canvas 兼容: " + FoliaCompat.FOLIA + ")");
     }
 
     @Override

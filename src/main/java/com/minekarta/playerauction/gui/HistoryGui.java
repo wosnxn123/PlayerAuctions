@@ -3,6 +3,7 @@ package com.minekarta.playerauction.gui;
 import com.minekarta.playerauction.PlayerAuction;
 import com.minekarta.playerauction.transaction.model.Transaction;
 import com.minekarta.playerauction.util.TimeUtil;
+import com.folia.compat.FoliaCompat;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -45,8 +46,8 @@ public class HistoryGui extends PaginatedGui {
                     this.transactions = hasNextPage ? fetchedTransactions.subList(0, itemsPerPage)
                             : fetchedTransactions;
 
-                    // Run on main thread to populate items
-                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    // Run on the player's entity thread to populate items
+                    FoliaCompat.runEntity(plugin, player, () -> {
                         // Populate transaction items
                         for (int i = 0; i < transactions.size(); i++) {
                             Transaction transaction = transactions.get(i);
@@ -73,11 +74,11 @@ public class HistoryGui extends PaginatedGui {
 
                         // ✅ FIX: Open inventory AFTER build is complete
                         openInventory();
-                    });
+                    }, this::openInventory);
                 }).exceptionally(ex -> {
                     kah.getLogger().severe("Error building HistoryGui: " + ex.getMessage());
                     ex.printStackTrace();
-                    plugin.getServer().getScheduler().runTask(plugin, this::openInventory);
+                    FoliaCompat.runEntity(plugin, player, this::openInventory, () -> {});
                     return null;
                 });
     }

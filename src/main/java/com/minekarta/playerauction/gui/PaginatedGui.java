@@ -2,6 +2,7 @@ package com.minekarta.playerauction.gui;
 
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import com.folia.compat.FoliaCompat;
 import com.minekarta.playerauction.PlayerAuction;
 import com.minekarta.playerauction.util.PlaceholderContext;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -93,13 +94,12 @@ public abstract class PaginatedGui extends Gui {
         // Player Info Item (Slot 49) - Center position
         createPlayerInfoItem().thenAccept(item -> {
             inventory.setItem(49, item);
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                inventory.getViewers().forEach(viewer -> {
-                    if (viewer instanceof Player playerViewer) {
-                        playerViewer.updateInventory();
-                    }
-                });
-            });
+            // 刷新查看者(本GUI绑定的player)背包, 经 EntityScheduler
+            FoliaCompat.runEntity(plugin, player, () -> inventory.getViewers().forEach(viewer -> {
+                if (viewer instanceof Player playerViewer) {
+                    playerViewer.updateInventory();
+                }
+            }), () -> {});
         });
 
         // Next Page Button (Slot 52) - Right side
@@ -175,10 +175,8 @@ public abstract class PaginatedGui extends Gui {
                     .setLore(lore)
                     .build();
 
-            // Update on main thread
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                inventory.setItem(49, playerInfoItem);
-            });
+            // Update on the player's entity thread
+            FoliaCompat.runEntity(plugin, player, () -> inventory.setItem(49, playerInfoItem), () -> {});
         });
     }
 }

@@ -5,6 +5,7 @@ import com.minekarta.playerauction.common.SerializedItem;
 import com.minekarta.playerauction.economy.EconomyRouter;
 import com.minekarta.playerauction.mailbox.model.MailboxItem;
 import com.minekarta.playerauction.mailbox.model.MailboxItemType;
+import com.folia.compat.FoliaCompat;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
@@ -119,13 +120,13 @@ public class MailboxService {
         // Mark as claimed first (to prevent duplicate claims)
         return storage.claimItem(item.id()).thenApply(success -> {
             if (success) {
-                // Give item to player on main thread
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                // 操作玩家背包, 用 EntityScheduler(Folia)/主线程(Paper); 玩家下线时静默
+                FoliaCompat.runEntity(plugin, player, () -> {
                     player.getInventory().addItem(itemStack);
                     player.sendMessage(plugin.getConfigManager().getPrefixedMessage("mailbox.item-claimed",
                         "%item%", itemStack.getType().toString(),
                         "%quantity%", String.valueOf(itemStack.getAmount())));
-                });
+                }, () -> {});
                 return true;
             } else {
                 player.sendMessage(plugin.getConfigManager().getPrefixedMessage("mailbox.claim-failed"));

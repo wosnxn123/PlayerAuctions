@@ -1,6 +1,7 @@
 package com.minekarta.playerauction.gui;
 
 import com.minekarta.playerauction.PlayerAuction;
+import com.folia.compat.FoliaCompat;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -56,20 +57,15 @@ public abstract class Gui implements InventoryHolder, Listener {
     /**
      * Opens the inventory to the player.
      * For async GUIs, call this after all async operations complete.
-     * Ensures execution on main thread.
+     * 打开背包是玩家实体操作, Folia 下必须经 EntityScheduler; 玩家下线时静默.
      */
     protected void openInventory() {
         if (player.isOnline()) {
-            // Ensure we're on main thread
-            if (Bukkit.isPrimaryThread()) {
-                player.openInventory(inventory);
-            } else {
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    if (player.isOnline()) {
-                        player.openInventory(inventory);
-                    }
-                });
-            }
+            FoliaCompat.runEntity(plugin, player, () -> {
+                if (player.isOnline()) {
+                    player.openInventory(inventory);
+                }
+            }, () -> {});
         }
     }
 

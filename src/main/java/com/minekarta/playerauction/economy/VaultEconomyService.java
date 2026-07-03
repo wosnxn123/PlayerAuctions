@@ -1,5 +1,6 @@
 package com.minekarta.playerauction.economy;
 
+import com.folia.compat.FoliaCompat;
 import net.milkbowl.vault.economy.Economy;
 import net.milkbowl.vault.economy.EconomyResponse;
 import org.bukkit.Bukkit;
@@ -65,7 +66,7 @@ public class VaultEconomyService implements EconomyService {
 
     private <T> CompletableFuture<T> supplyAsynchronously(Supplier<T> supplier) {
         CompletableFuture<T> future = new CompletableFuture<>();
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+        FoliaCompat.runAsync(plugin, () -> {
             try {
                 future.complete(supplier.get());
             } catch (Exception e) {
@@ -77,7 +78,7 @@ public class VaultEconomyService implements EconomyService {
 
     private CompletableFuture<Void> runAsynchronously(Runnable runnable) {
         CompletableFuture<Void> future = new CompletableFuture<>();
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+        FoliaCompat.runAsync(plugin, () -> {
             try {
                 runnable.run();
                 future.complete(null);

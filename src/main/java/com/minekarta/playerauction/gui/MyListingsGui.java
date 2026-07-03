@@ -4,6 +4,7 @@ import com.minekarta.playerauction.PlayerAuction;
 import com.minekarta.playerauction.auction.model.Auction;
 import com.minekarta.playerauction.auction.model.AuctionStatus;
 import com.minekarta.playerauction.util.TimeUtil;
+import com.folia.compat.FoliaCompat;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -75,8 +76,8 @@ public class MyListingsGui extends PaginatedGui {
                     this.hasNextPage = fetchedAuctions.size() > itemsPerPage;
                     this.auctions = hasNextPage ? fetchedAuctions.subList(0, itemsPerPage) : fetchedAuctions;
 
-                    // Populate auction items on main thread
-                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    // Populate auction items on the player's entity thread
+                    FoliaCompat.runEntity(plugin, player, () -> {
                         for (int i = 0; i < auctions.size(); i++) {
                             Auction auction = auctions.get(i);
                             ItemStack displayItem = createAuctionItem(auction);
@@ -105,11 +106,11 @@ public class MyListingsGui extends PaginatedGui {
 
                         // ✅ FIX: Open inventory AFTER build is complete
                         openInventory();
-                    });
+                    }, this::openInventory);
                 }).exceptionally(ex -> {
                     kah.getLogger().severe("Error building MyListingsGui: " + ex.getMessage());
                     ex.printStackTrace();
-                    plugin.getServer().getScheduler().runTask(plugin, this::openInventory);
+                    FoliaCompat.runEntity(plugin, player, this::openInventory, () -> {});
                     return null;
                 });
     }
@@ -343,9 +344,8 @@ public class MyListingsGui extends PaginatedGui {
                                 "%item%", clickedAuction.item().toItemStack().getType().toString());
                         player.sendMessage(successMsg);
                         // Refresh the GUI after a short delay
-                        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                            new MyListingsGui(kah, player, page).open();
-                        }, 20L); // 1 second delay
+                        FoliaCompat.runEntityLater(plugin, player, () -> new MyListingsGui(kah, player, page).open(),
+                                () -> {}, 20L); // 1 second delay
                     } else {
                         net.kyori.adventure.text.Component errMsg = kah.getConfigManager().getPrefixedMessage(
                                 "errors.cancel-failed",

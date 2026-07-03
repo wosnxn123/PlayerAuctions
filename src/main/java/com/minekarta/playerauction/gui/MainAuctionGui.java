@@ -6,6 +6,7 @@ import com.minekarta.playerauction.gui.model.AuctionCategory;
 import com.minekarta.playerauction.gui.model.SortOrder;
 import com.minekarta.playerauction.util.PlaceholderContext;
 import com.minekarta.playerauction.util.TimeUtil;
+import com.folia.compat.FoliaCompat;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -105,14 +106,14 @@ public class MainAuctionGui extends PaginatedGui {
             this.hasNextPage = fetchedAuctions.size() > itemsPerPage;
             this.auctions = hasNextPage ? fetchedAuctions.subList(0, itemsPerPage) : fetchedAuctions;
 
-            // Populate auction items on main thread
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
+            // Populate auction items on the player's entity thread
+            FoliaCompat.runEntity(plugin, player, () -> {
                 for (int i = 0; i < this.auctions.size(); i++) {
                     Auction auction = this.auctions.get(i);
                     ItemStack displayItem = createAuctionItem(auction, balance);
                     inventory.setItem(getSlotForItemIndex(i), displayItem);
                 }
-            });
+            }, () -> {});
 
             return balance;
         }).thenCombine(totalCountFuture, (balance, totalCount) -> {
@@ -123,8 +124,8 @@ public class MainAuctionGui extends PaginatedGui {
         }).thenAccept(data -> {
             int totalPages = (Integer) data[0];
 
-            // Build static parts and open inventory on main thread
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
+            // Build static parts and open inventory on the player's entity thread
+            FoliaCompat.runEntity(plugin, player, () -> {
                 try {
                     addControlBar();
                     addCustomControls();
@@ -138,12 +139,12 @@ public class MainAuctionGui extends PaginatedGui {
                     // Still try to open inventory
                     openInventory();
                 }
-            });
+            }, this::openInventory);
         }).exceptionally(ex -> {
             kah.getLogger().severe("Error in MainAuctionGui build: " + ex.getMessage());
             ex.printStackTrace();
             // Open inventory even on error
-            plugin.getServer().getScheduler().runTask(plugin, this::openInventory);
+            FoliaCompat.runEntity(plugin, player, this::openInventory, () -> {});
             return null;
         });
     }
@@ -196,10 +197,8 @@ public class MainAuctionGui extends PaginatedGui {
                 myListingsLore.add("<#7F8C8D>Active: <#ECF0F1>" + count + "<#7F8C8D>/<#ECF0F1>" + maxListings);
                 myListingsLore.add("");
                 myListingsLore.add("<#E67E22>Click to view");
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    inventory.setItem(50,
-                            new GuiItemBuilder(Material.BOOK).setName(myListingsName).setLore(myListingsLore).build());
-                });
+                FoliaCompat.runEntity(plugin, player, () -> inventory.setItem(50,
+                        new GuiItemBuilder(Material.BOOK).setName(myListingsName).setLore(myListingsLore).build()), () -> {});
             });
         }
 
