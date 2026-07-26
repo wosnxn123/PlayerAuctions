@@ -63,7 +63,14 @@ public final class FoliaCompat {
         Method rgRunLoc = null, rgRunDelLoc = null;
         Method enRun = null, enRunDel = null, enExec = null;
         try {
-            Class.forName("io.papermc.paper.threadedregions.scheduler.RegionScheduler");
+            // Folia 检测必须用「只存在于服务端实现」的类。
+            //
+            // 不要用 io.papermc.paper.threadedregions.scheduler.* —— 那一整个包属于 **paper-api**,
+            // 普通 Paper 也自带(Paper 让插件能无条件编译 Folia 调度器代码), 用它检测会把普通 Paper
+            // 误判成 Folia, 于是所有 `if (!FOLIA)` 的 Bukkit 回退路径在 Paper 上全是死代码。
+            //
+            // RegionizedServer 属于服务端, 只有 Folia 及其分支(Canvas 等)才有。
+            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
             folia = true;
             Class<?> globalCls = Class.forName("io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler");
             Class<?> asyncCls = Class.forName("io.papermc.paper.threadedregions.scheduler.AsyncScheduler");
@@ -155,8 +162,8 @@ public final class FoliaCompat {
         if (!FOLIA) {
             return new TaskHandle(Bukkit.getScheduler().runTask(plugin, runnable), null);
         }
-        invokeGlobal(plugin, runnable, GLOBAL_RUN, 0, 0, false, false);
-        return new TaskHandle(null, null);
+        // 保留 scheduler 返回的 ScheduledTask, 否则 TaskHandle#cancel 在 Folia 上是静默空操作
+        return new TaskHandle(null, invokeGlobal(plugin, runnable, GLOBAL_RUN, 0, 0, false, false));
     }
 
     /** 延迟 delayTicks 后在主线程(全局区域)执行一次. */
@@ -164,8 +171,7 @@ public final class FoliaCompat {
         if (!FOLIA) {
             return new TaskHandle(Bukkit.getScheduler().runTaskLater(plugin, runnable, delayTicks), null);
         }
-        invokeGlobal(plugin, runnable, GLOBAL_RUN_DELAYED, delayTicks, 0, false, false);
-        return new TaskHandle(null, null);
+        return new TaskHandle(null, invokeGlobal(plugin, runnable, GLOBAL_RUN_DELAYED, delayTicks, 0, false, false));
     }
 
     /**
@@ -248,8 +254,7 @@ public final class FoliaCompat {
         if (!FOLIA) {
             return new TaskHandle(Bukkit.getScheduler().runTaskAsynchronously(plugin, runnable), null);
         }
-        invokeAsync(plugin, runnable, ASYNC_RUN_NOW, 0, 0, false);
-        return new TaskHandle(null, null);
+        return new TaskHandle(null, invokeAsync(plugin, runnable, ASYNC_RUN_NOW, 0, 0, false));
     }
 
     /** 延迟 delayTicks(换算为 ms)后在异步线程执行一次. */
@@ -257,8 +262,7 @@ public final class FoliaCompat {
         if (!FOLIA) {
             return new TaskHandle(Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, runnable, delayTicks), null);
         }
-        invokeAsync(plugin, runnable, ASYNC_RUN_DELAYED, delayTicks, 0, false);
-        return new TaskHandle(null, null);
+        return new TaskHandle(null, invokeAsync(plugin, runnable, ASYNC_RUN_DELAYED, delayTicks, 0, false));
     }
 
     /** 异步定时重复, periodTicks 为周期. */

@@ -158,7 +158,44 @@ public class AuctionService {
                                                             ex.printStackTrace();
                                                             itemDelivery.complete(false);
                                                         }
-                                                    }, () -> itemDelivery.complete(false));
+                                                    }, () -> {
+                                                        // Retired: the buyer's entity is gone (they disconnected
+                                                        // mid-purchase), so the task will never run. This path is
+                                                        // fork-introduced - upstream used a plain main-thread runTask
+                                                        // with no retired callback - and it is entirely normal, not an
+                                                        // error. Completing false here would take the buyer's money,
+                                                        // pay the seller, mark the auction FINISHED and then drop the
+                                                        // item on the floor of the log, because the failure branch
+                                                        // below only warns.
+                                                        //
+                                                        // Park the item in the buyer's mailbox instead, so the
+                                                        // purchase completes and they collect it next login. Only if
+                                                        // mailboxing also fails do we unwind the money: a refund plus
+                                                        // a delivered item would be worse than either outcome alone.
+                                                        plugin.getLogger().info("Buyer " + buyer.getName()
+                                                                + " went offline during purchase of auction "
+                                                                + auction.id() + "; routing item to their mailbox");
+                                                        try {
+                                                            mailboxService.addReturnedItem(
+                                                                    buyer.getUniqueId(),
+                                                                    auction.item(),
+                                                                    "purchase-undelivered",
+                                                                    auction.id())
+                                                                    .whenComplete((ignored, mailEx) -> {
+                                                                        if (mailEx != null) {
+                                                                            refundFailedPurchase(auction, buyer,
+                                                                                    buyPrice, sellerAmount, mailEx);
+                                                                            itemDelivery.complete(false);
+                                                                        } else {
+                                                                            itemDelivery.complete(true);
+                                                                        }
+                                                                    });
+                                                        } catch (Throwable mailEx) {
+                                                            refundFailedPurchase(auction, buyer, buyPrice,
+                                                                    sellerAmount, mailEx);
+                                                            itemDelivery.complete(false);
+                                                        }
+                                                    });
 
                                                     return itemDelivery.thenApply(delivered -> {
                                                         if (delivered) {
@@ -243,6 +280,25 @@ public class AuctionService {
                         });
             });
         });
+    }
+
+    /**
+     * Last-resort unwind for a purchase whose item could be neither delivered nor mailboxed.
+     *
+     * <p>Refunds the buyer what they paid and takes back what the seller was credited, so the money
+     * does not stay moved for an item nobody received. Called only after mailbox insertion has also
+     * failed - the mailbox is always the preferred outcome, because it completes the purchase instead
+     * of undoing it.
+     */
+    private void refundFailedPurchase(Auction auction, Player buyer, double buyPrice, double sellerAmount,
+            Throwable cause) {
+        plugin.getLogger().severe("Could not deliver or mailbox item for auction " + auction.id()
+                + "; refunding buyer " + buyer.getName() + " and reclaiming the seller payment"
+                + (cause == null ? "" : ": " + cause));
+        EconomyService economy = economyRouter.getService();
+        economy.deposit(buyer.getUniqueId(), buyPrice, "Refund - item could not be delivered");
+        economy.withdraw(auction.seller(), sellerAmount, "Reclaim - buyer's item could not be delivered");
+        buyer.sendMessage(configManager.getPrefixedMessage("errors.buy-fail"));
     }
 
     public CompletableFuture<Boolean> cancelAuction(Player player, UUID auctionId) {
