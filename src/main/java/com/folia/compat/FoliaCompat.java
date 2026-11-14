@@ -2,6 +2,7 @@ package com.folia.compat;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -145,9 +146,11 @@ public final class FoliaCompat {
         public void cancel() {
             try {
                 if (bukkitTask != null) {
-                    bukkitTask.getClass().getMethod("cancel").invoke(bukkitTask);
+                    org.bukkit.scheduler.BukkitTask.class.getMethod("cancel").invoke(bukkitTask);
                 } else if (foliaTask != null) {
-                    foliaTask.getClass().getMethod("cancel").invoke(foliaTask);
+                    // Invoke the PUBLIC API, not a potentially private scheduler implementation.
+                    Class.forName("io.papermc.paper.threadedregions.scheduler.ScheduledTask")
+                            .getMethod("cancel").invoke(foliaTask);
                 }
             } catch (Throwable ignored) {
             }
@@ -220,8 +223,7 @@ public final class FoliaCompat {
             return new TaskHandle(Bukkit.getScheduler().runTask(plugin, runnable), null);
         }
         Object scheduler = getEntityScheduler(entity);
-        invokeEntity(plugin, scheduler, runnable, retired, ENTITY_RUN, 0, false);
-        return new TaskHandle(null, null);
+        return new TaskHandle(null, invokeEntity(plugin, scheduler, runnable, retired, ENTITY_RUN, 0, false));
     }
 
     /** 在该实体所在区域的主线程延迟 delayTicks 后执行一次. */
@@ -230,8 +232,7 @@ public final class FoliaCompat {
             return new TaskHandle(Bukkit.getScheduler().runTaskLater(plugin, runnable, delayTicks), null);
         }
         Object scheduler = getEntityScheduler(entity);
-        invokeEntity(plugin, scheduler, runnable, retired, ENTITY_RUN_DELAYED, delayTicks, false);
-        return new TaskHandle(null, null);
+        return new TaskHandle(null, invokeEntity(plugin, scheduler, runnable, retired, ENTITY_RUN_DELAYED, delayTicks, false));
     }
 
     // ============================ 区域调度 ============================
@@ -243,8 +244,7 @@ public final class FoliaCompat {
             return new TaskHandle(Bukkit.getScheduler().runTask(plugin, runnable), null);
         }
         Object region = getServerRegion();
-        invokeRegionLocation(region, plugin, location, runnable, REGION_RUN_LOCATION, 0);
-        return new TaskHandle(null, null);
+        return new TaskHandle(null, invokeRegionLocation(region, plugin, location, runnable, REGION_RUN_LOCATION, 0));
     }
 
     // ============================ 异步 ============================
@@ -329,32 +329,37 @@ public final class FoliaCompat {
         }
     }
 
-    private static void invokeEntity(Plugin plugin, Object scheduler, Runnable runnable, Runnable retired, Method method, long delay, boolean isRate) {
+    private static Object invokeEntity(Plugin plugin, Object scheduler, Runnable runnable, Runnable retired, Method method, long delay, boolean isRate) {
         try {
             Consumer<Object> c = wrap(runnable);
-            Runnable ret = retired != null ? retired : () -> {
+            AtomicBoolean retirementHandled = new AtomicBoolean();
+            Runnable ret = () -> {
+                if (retirementHandled.compareAndSet(false, true) && retired != null) {
+                    retired.run();
+                }
             };
-            // EntityScheduler.run 是 3 参数(Plugin, Consumer, Runnable);
-            // EntityScheduler.runDelayed 是 4 参数(Plugin, Consumer, Runnable, long).
-            // 按方法参数个数决定传不传 delay.
-            int paramCount = method.getParameterCount();
-            if (paramCount == 4) {
-                method.invoke(scheduler, plugin, c, ret, delay);
-            } else {
-                method.invoke(scheduler, plugin, c, ret);
+            // EntityScheduler.run 是 3 参数，runDelayed 是 4 参数。
+            Object task = method.getParameterCount() == 4
+                    ? method.invoke(scheduler, plugin, c, ret, delay)
+                    : method.invoke(scheduler, plugin, c, ret);
+            // 已退役实体返回 null 时，调度器不会调用 retired。
+            // 必须走离线投递/邮箱回退，否则异步领取可能丢失物品。
+            if (task == null) {
+                ret.run();
             }
+            return task;
         } catch (Throwable t) {
             throw new RuntimeException(t);
         }
     }
 
-    private static void invokeRegionLocation(Object region, Plugin plugin, Location location, Runnable runnable, Method method, long delay) {
+    private static Object invokeRegionLocation(Object region, Plugin plugin, Location location, Runnable runnable, Method method, long delay) {
         try {
             Consumer<Object> c = wrap(runnable);
             if (method.getParameterTypes().length == 4) {
-                method.invoke(region, plugin, location, c, delay);
+                return method.invoke(region, plugin, location, c, delay);
             } else {
-                method.invoke(region, plugin, location, c);
+                return method.invoke(region, plugin, location, c);
             }
         } catch (Throwable t) {
             throw new RuntimeException(t);
